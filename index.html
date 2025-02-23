@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestion des Tâches Ménagères</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🏠 Gestion des Tâches Ménagères</h1>
+      <a href="admin.html" class="admin-btn"><i class="fas fa-cog"></i> Gérer le système</a>
+      <a href="planification.html" class="admin-btn"><i class="fas fa-calendar"></i> Planification</a>
+    </header>
+
+    <div class="task-form">
+      <!-- Sélection de la pièce -->
+      <select id="roomSelect" class="room-select">
+        <option value="">Choisir une pièce...</option>
+      </select>
+
+      <!-- Liste déroulante des tâches suggérées (chargées depuis Supabase) -->
+      <select id="taskSuggestions" class="task-suggestions" disabled>
+        <option value="">Sélectionnez d'abord une pièce...</option>
+      </select>
+
+      <!-- Sélection de la personne -->
+      <select id="assigneeSelect" class="assignee-select">
+        <option value="">Choisir une personne...</option>
+      </select>
+
+      <!-- Sélection du statut -->
+      <select id="statusSelect" class="status-select">
+        <option value="">Choisir le statut...</option>
+        <option value="à faire">À faire</option>
+        <option value="en cours">En cours</option>
+        <option value="terminé">Terminé</option>
+      </select>
+
+      <button id="addTask">Ajouter</button>
+    </div>
+
+    <div class="tasks-container">
+      <div class="tasks-header">
+        <h2>Tâches</h2>
+        <div class="filter-buttons">
+          <!-- Le filtre par défaut est "Actives" (tâches dont le statut n'est pas "terminé") -->
+          <button class="filter-btn active" data-filter="active">Actives</button>
+          <button class="filter-btn" data-filter="all">Toutes</button>
+          <button class="filter-btn" data-filter="à faire">À faire</button>
+          <button class="filter-btn" data-filter="en cours">En cours</button>
+          <button class="filter-btn" data-filter="terminé">Terminées</button>
+        </div>
+      </div>
+      <ul id="taskList" class="task-list"></ul>
+    </div>
+  </div>
+
+  <!-- Chargement de Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+  <script>
+    const SUPABASE_URL = "https://lrfbyomtntbwgvjbelnj.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxyZmJ5b210bnRid2d2amJlbG5qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk3OTk5NTQsImV4cCI6MjA1NTM3NTk1NH0.-qb3Ijvf3ET8VdFp4l05Tjikz-Q9tZdQiujrswtRXsI";
+    window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  </script>
+  <!-- Script principal -->
+  <script src="script.js"></script>
+</body>
+</html>
