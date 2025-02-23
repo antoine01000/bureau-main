@@ -1,7 +1,6 @@
 /**************************************************************
  * script.js - Page principale (Gestion des Tâches Ménagères)
  **************************************************************/
-
 const supabase = window.supabaseClient;
 
 // Sélecteurs DOM
@@ -9,92 +8,108 @@ const roomSelect = document.getElementById('roomSelect');
 const taskSuggestions = document.getElementById('taskSuggestions');
 const assigneeSelect = document.getElementById('assigneeSelect');
 const statusSelect = document.getElementById('statusSelect');
+const repetitionSelect = document.getElementById('repetitionSelect');
+const deadlineInput = document.getElementById('deadline');
 const addTaskButton = document.getElementById('addTask');
 const taskList = document.getElementById('taskList');
 const filterButtons = document.querySelectorAll('.filter-btn');
 
-/* --- Fonctions pour interagir avec Supabase --- */
+// Modal elements
+const editModal = document.getElementById('editModal');
+const editTaskNameInput = document.getElementById('editTaskName');
+const editTaskAssigneeSelect = document.getElementById('editTaskAssignee');
+const editTaskStatusSelect = document.getElementById('editTaskStatus');
+const editTaskRepetitionSelect = document.getElementById('editTaskRepetition');
+const editTaskDeadlineInput = document.getElementById('editTaskDeadline');
+const saveEditBtn = document.getElementById('saveEditBtn');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
 
-// Récupérer les pièces
+let currentEditingTaskId = null; // Pour suivre la tâche en cours d'édition
+
+/* --- Fonctions Supabase --- */
 async function fetchRooms() {
   const { data, error } = await supabase.from('rooms').select('*');
-  if (error) {
-    console.error("Erreur fetchRooms:", error);
-    return [];
-  }
+  if (error) { console.error("Erreur fetchRooms:", error); return []; }
   return data;
 }
 
-// Récupérer les suggestions de tâches pour une pièce donnée
 async function fetchTaskSuggestions(roomKey) {
   const { data, error } = await supabase
     .from('task_suggestions')
     .select('*')
     .eq('room', roomKey)
     .order('id', { ascending: true });
-  if (error) {
-    console.error("Erreur fetchTaskSuggestions:", error);
-    return [];
-  }
+  if (error) { console.error("Erreur fetchTaskSuggestions:", error); return []; }
   return data;
 }
 
-// Récupérer les tâches avec une jointure LEFT sur rooms pour inclure toutes les tâches
 async function fetchTasks() {
   const { data, error } = await supabase
     .from('tasks')
     .select('*, rooms(name)');
-  if (error) {
-    console.error("Erreur fetchTasks:", error);
-    return [];
-  }
+  if (error) { console.error("Erreur fetchTasks:", error); return []; }
   return data;
 }
 
-// Récupérer les personnes
 async function fetchPeople() {
   const { data, error } = await supabase.from('people').select('*');
-  if (error) {
-    console.error("Erreur fetchPeople:", error);
-    return [];
-  }
+  if (error) { console.error("Erreur fetchPeople:", error); return []; }
   return data;
 }
 
-// Insertion d'une nouvelle tâche
-async function insertTask(taskName, assignee, roomId, status) {
+async function insertTask(taskName, assignee, roomId, status, repetition, deadline) {
   const { data, error } = await supabase
     .from('tasks')
     .insert([{
       name: taskName,
       assignee: assignee,
       room_id: parseInt(roomId),
-      status: status
+      status: status,
+      repetition: repetition,
+      deadline: deadline
     }])
     .select();
-  if (error) {
-    console.error("Erreur insertTask:", error);
-  } else {
-    console.log("Tâche insérée :", data);
-  }
+  if (error) { console.error("Erreur insertTask:", error); }
+  else { console.log("Tâche insérée :", data); }
   return data;
 }
 
-// Suppression d'une tâche
 async function deleteTaskInDB(taskId) {
   const { data, error } = await supabase
     .from('tasks')
     .delete()
     .eq('id', taskId);
-  if (error) {
-    console.error("Erreur deleteTaskInDB:", error);
-  }
+  if (error) { console.error("Erreur deleteTaskInDB:", error); }
   return data;
 }
 
-/* --- Fonctions de rendu --- */
+async function updateTask(taskId, updatedFields) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update(updatedFields)
+    .eq('id', taskId)
+    .select();
+  if (error) { console.error("Erreur updateTask:", error); return null; }
+  return data;
+}
 
-// Remplir le sélecteur des pièces
+/* --- Fonction utilitaire --- */
+function computeDeadline(repetition) {
+  let daysToAdd = 0;
+  switch(repetition) {
+    case 'hebdomadaire': daysToAdd = 7; break;
+    case 'mensuel': daysToAdd = 30; break;
+    case '3_mois': daysToAdd = 90; break;
+    case '6_mois': daysToAdd = 180; break;
+    case '1_an': daysToAdd = 360; break;
+    default: daysToAdd = 0;
+  }
+  const today = new Date();
+  today.setDate(today.getDate() + daysToAdd);
+  return today.toISOString().split('T')[0];
+}
+
+/* --- Fonctions de rendu --- */
 async function renderRooms() {
   roomSelect.innerHTML = '<option value="">Choisir une pièce...</option>';
   const rooms = await fetchRooms();
@@ -106,19 +121,20 @@ async function renderRooms() {
   });
 }
 
-// Remplir le sélecteur des personnes
 async function renderMembers() {
   assigneeSelect.innerHTML = '<option value="">Choisir une personne...</option>';
+  editTaskAssigneeSelect.innerHTML = '<option value="">Choisir une personne...</option>';
   const people = await fetchPeople();
   people.forEach(person => {
     const option = document.createElement('option');
-    option.value = person.name; // ou person.id selon vos besoins
+    option.value = person.name;
     option.textContent = person.name;
     assigneeSelect.appendChild(option);
+    const modalOption = option.cloneNode(true);
+    editTaskAssigneeSelect.appendChild(modalOption);
   });
 }
 
-// Remplir la liste déroulante des tâches suggérées pour la pièce sélectionnée
 async function renderTaskSuggestions() {
   taskSuggestions.innerHTML = '';
   const selectedRoomId = roomSelect.value;
@@ -139,17 +155,13 @@ async function renderTaskSuggestions() {
   }
 }
 
-// Afficher les tâches sous forme de ligne avec Tâche, Personne, Pièce et Statut
 async function renderTasks(filter = 'active') {
   const tasks = await fetchTasks();
   console.log("Tâches récupérées :", tasks);
   const selectedRoomId = roomSelect.value;
   let filteredTasks = tasks;
-  if (selectedRoomId) {
-    filteredTasks = filteredTasks.filter(task => task.room_id == selectedRoomId);
-  }
+  if (selectedRoomId) { filteredTasks = filteredTasks.filter(task => task.room_id == selectedRoomId); }
   if (filter === 'active') {
-    // Afficher uniquement les tâches dont le statut n'est pas "terminé"
     filteredTasks = filteredTasks.filter(task => task.status !== 'terminé');
   } else if (filter !== 'all') {
     filteredTasks = filteredTasks.filter(task => task.status === filter);
@@ -167,60 +179,82 @@ async function renderTasks(filter = 'active') {
           <span class="task-name"><strong>Tâche :</strong> ${task.name}</span> | 
           <span class="task-assignee"><strong>Personne :</strong> ${task.assignee}</span> | 
           <span class="task-room"><strong>Pièce :</strong> ${roomName}</span> | 
-          <span class="task-status"><strong>Statut :</strong> ${task.status}</span>
+          <span class="task-status"><strong>Statut :</strong> ${task.status}</span> | 
+          <span class="task-repetition"><strong>Répétition :</strong> ${task.repetition || ''}</span> | 
+          <span class="task-deadline"><strong>Date limite :</strong> ${task.deadline || ''}</span>
         </div>
         <div class="task-actions">
-          <button class="delete-btn" onclick="deleteTask(${task.id})">
-            <i class="fas fa-trash"></i>
-          </button>
+          <button class="delete-btn"><i class="fas fa-trash"></i></button>
+          <button class="modify-btn"><i class="fas fa-edit"></i></button>
         </div>
       `;
+      li.querySelector('.delete-btn').addEventListener('click', async () => {
+        if (confirm("Voulez-vous vraiment supprimer cette tâche ?")) {
+          await deleteTaskInDB(task.id);
+          await renderTasks();
+        }
+      });
+      li.querySelector('.modify-btn').addEventListener('click', () => {
+        openEditModal(task);
+      });
       taskList.appendChild(li);
     });
   }
 }
 
-// Fonction pour supprimer une tâche et rafraîchir l'affichage
-window.deleteTask = async function(taskId) {
-  if (confirm("Voulez-vous vraiment supprimer cette tâche ?")) {
-    await deleteTaskInDB(taskId);
-    await renderTasks();
-  }
+/* --- Fonctions de la modale d'édition --- */
+function openEditModal(task) {
+  currentEditingTaskId = task.id;
+  editTaskNameInput.value = task.name;
+  editTaskStatusSelect.value = task.status;
+  editTaskRepetitionSelect.value = task.repetition || "";
+  editTaskDeadlineInput.value = task.deadline || "";
+  editTaskAssigneeSelect.value = task.assignee;
+  editModal.style.display = "flex";
+}
+
+function closeEditModal() {
+  editModal.style.display = "none";
+  currentEditingTaskId = null;
 }
 
 /* --- Événements --- */
-
-// Lors du changement de pièce, actualiser les suggestions et afficher les tâches correspondantes
 roomSelect.addEventListener('change', async () => {
   await renderTaskSuggestions();
   await renderTasks();
 });
 
-// Ajout d'une nouvelle tâche via Supabase (en utilisant la tâche sélectionnée dans la liste déroulante)
+repetitionSelect.addEventListener('change', () => {
+  const rep = repetitionSelect.value;
+  if (rep) { deadlineInput.value = computeDeadline(rep); }
+  else { deadlineInput.value = ""; }
+});
+
 addTaskButton.addEventListener('click', async () => {
   const roomId = roomSelect.value;
   const taskName = taskSuggestions.value.trim();
   const assignee = assigneeSelect.value;
   const status = statusSelect.value;
+  const repetition = repetitionSelect.value;
+  const deadline = deadlineInput.value;
   
-  if (roomId && taskName && assignee && status) {
-    await insertTask(taskName, assignee, roomId, status);
+  if (roomId && taskName && assignee && status && repetition && deadline) {
+    await insertTask(taskName, assignee, roomId, status, repetition, deadline);
     
-    // Réinitialiser tous les filtres aux valeurs par défaut
+    // Réinitialiser les champs de création
     roomSelect.value = "";
     taskSuggestions.innerHTML = `<option value="">Sélectionnez d'abord une pièce...</option>`;
     taskSuggestions.disabled = true;
     assigneeSelect.value = "";
     statusSelect.value = "";
+    repetitionSelect.value = "";
+    deadlineInput.value = "";
     
-    // Réinitialiser les boutons de filtre (définir le filtre par défaut "active")
+    // Réinitialiser les filtres
     filterButtons.forEach(btn => btn.classList.remove('active'));
     const defaultFilterButton = document.querySelector('.filter-btn[data-filter="active"]');
-    if (defaultFilterButton) {
-      defaultFilterButton.classList.add('active');
-    }
+    if (defaultFilterButton) { defaultFilterButton.classList.add('active'); }
     
-    // Rafraîchir l'affichage des tâches et des suggestions
     await renderTaskSuggestions();
     await renderTasks();
   } else {
@@ -228,13 +262,45 @@ addTaskButton.addEventListener('click', async () => {
   }
 });
 
-// Filtrage des tâches via les boutons
 filterButtons.forEach(button => {
   button.addEventListener('click', () => {
     filterButtons.forEach(btn => btn.classList.remove('active'));
     button.classList.add('active');
     renderTasks(button.dataset.filter);
   });
+});
+
+// Événements pour la modale d'édition
+editTaskRepetitionSelect.addEventListener('change', () => {
+  const rep = editTaskRepetitionSelect.value;
+  if (rep) { editTaskDeadlineInput.value = computeDeadline(rep); }
+  else { editTaskDeadlineInput.value = ""; }
+});
+
+saveEditBtn.addEventListener('click', async () => {
+  const newName = editTaskNameInput.value.trim();
+  const newAssignee = editTaskAssigneeSelect.value;
+  const newStatus = editTaskStatusSelect.value;
+  const newRepetition = editTaskRepetitionSelect.value;
+  const newDeadline = editTaskDeadlineInput.value;
+  
+  if (newName && newAssignee && newStatus && newRepetition && newDeadline) {
+    await updateTask(currentEditingTaskId, {
+      name: newName,
+      assignee: newAssignee,
+      status: newStatus,
+      repetition: newRepetition,
+      deadline: newDeadline
+    });
+    await renderTasks();
+    closeEditModal();
+  } else {
+    alert("Veuillez remplir tous les champs de modification.");
+  }
+});
+
+cancelEditBtn.addEventListener('click', () => {
+  closeEditModal();
 });
 
 /* --- Initialisation --- */

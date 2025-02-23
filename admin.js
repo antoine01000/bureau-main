@@ -61,9 +61,10 @@ async function fetchTaskSuggestionsForRoom(roomKey) {
   return data;
 }
 async function insertTaskSuggestion(roomKey, suggestionName) {
+  // Insertion avec la répétition par défaut "hebdomadaire"
   const { data, error } = await supabase
     .from('task_suggestions')
-    .insert([{ room: roomKey, name: suggestionName }])
+    .insert([{ room: roomKey, name: suggestionName, repetition: 'hebdomadaire' }])
     .select();
   if (error) {
     console.error('insertTaskSuggestion error:', error);
@@ -91,6 +92,18 @@ async function deleteTaskSuggestion(id) {
     .select();
   if (error) {
     console.error('deleteTaskSuggestion error:', error);
+    return null;
+  }
+  return data;
+}
+async function updateTaskSuggestionRepetition(id, newRepetition) {
+  const { data, error } = await supabase
+    .from('task_suggestions')
+    .update({ repetition: newRepetition })
+    .eq('id', id)
+    .select();
+  if (error) {
+    console.error('updateTaskSuggestionRepetition error:', error);
     return null;
   }
   return data;
@@ -128,7 +141,7 @@ async function renderPeople() {
  * Rendu Rooms et Tâches Suggérées (arborescence)
  **************************************************************/
 async function renderTaskSuggestionsForRoom(room) {
-  // Normalisation du nom de la pièce pour matcher le champ "room" de task_suggestions
+  // Normaliser le nom de la pièce pour matcher le champ "room" de task_suggestions
   const roomKey = room.name.toLowerCase().replace(/\s+/g, '_').replace(/[éèê]/g, 'e');
   const suggestions = await fetchTaskSuggestionsForRoom(roomKey);
   const suggestionsList = document.getElementById(`suggestions-${room.id}`);
@@ -136,15 +149,28 @@ async function renderTaskSuggestionsForRoom(room) {
   suggestions.forEach(suggestion => {
     const li = document.createElement('li');
     li.innerHTML = `
+      <select class="repetition-select" data-id="${suggestion.id}">
+        <option value="hebdomadaire">Hebdomadaire</option>
+        <option value="mensuel">Mensuel</option>
+        <option value="3_mois">3 mois</option>
+        <option value="6_mois">6 mois</option>
+        <option value="1_an">1 an</option>
+      </select>
       <span class="suggestion-name" data-id="${suggestion.id}">${suggestion.name}</span>
       <div class="item-actions">
         <button class="edit-suggestion-btn" data-id="${suggestion.id}"><i class="fas fa-edit"></i></button>
         <button class="delete-suggestion-btn" data-id="${suggestion.id}"><i class="fas fa-trash"></i></button>
       </div>
     `;
-    suggestionsList.appendChild(li);
-
-    // Édition de la suggestion
+    const repetitionSelect = li.querySelector('.repetition-select');
+    // Si la suggestion a déjà une répétition enregistrée, la sélectionner,
+    // sinon utiliser "hebdomadaire" par défaut.
+    repetitionSelect.value = suggestion.repetition || 'hebdomadaire';
+    repetitionSelect.addEventListener('change', async (e) => {
+      const newRepetition = e.target.value;
+      const suggestionId = e.target.getAttribute('data-id');
+      await updateTaskSuggestionRepetition(suggestionId, newRepetition);
+    });
     li.querySelector('.edit-suggestion-btn').addEventListener('click', () => {
       const span = li.querySelector('.suggestion-name');
       const currentName = span.textContent;
@@ -156,7 +182,6 @@ async function renderTaskSuggestionsForRoom(room) {
       li.removeChild(span);
       const editBtn = li.querySelector('.edit-suggestion-btn');
       editBtn.innerHTML = '<i class="fas fa-save"></i>';
-      // Lorsque l'on clique sur "sauvegarder"
       editBtn.addEventListener('click', async function saveHandler() {
         const newName = input.value.trim();
         if (newName && newName !== currentName) {
@@ -166,23 +191,22 @@ async function renderTaskSuggestionsForRoom(room) {
         editBtn.removeEventListener('click', saveHandler);
       });
     });
-
-    // Suppression de la suggestion
     li.querySelector('.delete-suggestion-btn').addEventListener('click', async () => {
       if (confirm("Supprimer cette tâche suggérée ?")) {
         await deleteTaskSuggestion(suggestion.id);
         renderTaskSuggestionsForRoom(room);
       }
     });
+    suggestionsList.appendChild(li);
   });
 }
 
 async function renderRooms() {
   const rooms = await fetchRooms();
   const roomsList = document.getElementById('roomsList');
-  const roomSelect = document.getElementById('roomSelect');
+  const roomSelectElement = document.getElementById('roomSelect');
   roomsList.innerHTML = '';
-  roomSelect.innerHTML = '<option value="">Choisir une pièce...</option>';
+  roomSelectElement.innerHTML = '<option value="">Choisir une pièce...</option>';
   rooms.forEach(room => {
     const li = document.createElement('li');
     li.innerHTML = `
@@ -202,7 +226,7 @@ async function renderRooms() {
     const option = document.createElement('option');
     option.value = room.id;
     option.textContent = room.name;
-    roomSelect.appendChild(option);
+    roomSelectElement.appendChild(option);
 
     li.querySelector('.delete-btn').addEventListener('click', async () => {
       if (confirm('Supprimer cette pièce ?')) {
@@ -228,9 +252,8 @@ async function renderRooms() {
 }
 
 /**************************************************************
- * Événements
+ * Événements et Initialisation
  **************************************************************/
-// Ajout de personne via Supabase
 document.getElementById('addPerson').addEventListener('click', async () => {
   const name = document.getElementById('newPersonName').value.trim();
   if (name) {
@@ -240,7 +263,6 @@ document.getElementById('addPerson').addEventListener('click', async () => {
   }
 });
 
-// Ajout d'une pièce via Supabase
 document.getElementById('addRoom').addEventListener('click', async () => {
   const name = document.getElementById('newRoomName').value.trim();
   if (name) {
@@ -250,9 +272,6 @@ document.getElementById('addRoom').addEventListener('click', async () => {
   }
 });
 
-/**************************************************************
- * Initialisation
- **************************************************************/
 (async function initAdmin() {
   await renderPeople();
   await renderRooms();
